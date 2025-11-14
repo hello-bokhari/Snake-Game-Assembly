@@ -1,4 +1,3 @@
-
 INCLUDE Irvine32.inc
 INCLUDELIB Irvine32.lib
 INCLUDELIB kernel32.lib
@@ -50,9 +49,10 @@ main PROC
     xor esi, esi
 init_loop:
     mov al, 20
-    sub al, esi  ;error
+    mov cl, BYTE PTR esi
+    sub al, cl
     mov [snakeX+esi], al
-    mov [snakeY+esi], 10
+    mov BYTE PTR [snakeY+esi], 10
     inc esi
     cmp esi, 5
     jl init_loop
@@ -364,6 +364,7 @@ cap_length:
     mov snakeLen, MAXLEN
     inc score
     call PlaceFood
+    jmp insert_head
 
 normal_move:
     ; Shift body
@@ -381,8 +382,10 @@ shift_loop:
     jmp shift_loop
 
 insert_head:
-    mov [snakeX], tempX ; error
-    mov [snakeY], tempY ;error
+    mov al, tempX
+    mov [snakeX], al
+    mov al, tempY
+    mov [snakeY], al
     popad
     ret
 
