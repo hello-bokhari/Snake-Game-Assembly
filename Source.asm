@@ -50,7 +50,7 @@ main PROC
     xor esi, esi
 init_loop:
     mov al, 20
-    sub al, esi
+    sub al, esi  ;error
     mov [snakeX+esi], al
     mov [snakeY+esi], 10
     inc esi
@@ -381,8 +381,8 @@ shift_loop:
     jmp shift_loop
 
 insert_head:
-    mov [snakeX], tempX
-    mov [snakeY], tempY
+    mov [snakeX], tempX ; error
+    mov [snakeY], tempY ;error
     popad
     ret
 
