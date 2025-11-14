@@ -5,414 +5,563 @@ INCLUDELIB kernel32.lib
 ExitProcess PROTO, dwExitCode:DWORD
 
 ;--------------- Constants ----------------
-WIDTH_BYTE  EQU 40
-HEIGHT_BYTE EQU 20
-MAXLEN      EQU 250
-DELAY_MS    EQU 90
+GRID_WIDTH  EQU 40
+GRID_HEIGHT EQU 20
+MAX_SNAKE   EQU 250
+GAME_DELAY  EQU 90
+
+; Direction constants
+DIR_RIGHT   EQU 0
+DIR_DOWN    EQU 1
+DIR_LEFT    EQU 2
+DIR_UP      EQU 3
 
 ;--------------- Data --------------------
 .data
-score       DWORD 0
-snakeLen    DWORD 5
-dir         BYTE 0          ; 0=right, 1=down, 2=left, 3=up
-foodX       BYTE 0
-foodY       BYTE 0
-snakeX      BYTE MAXLEN DUP(0)
-snakeY      BYTE MAXLEN DUP(0)
+gameScore   DWORD 0
+snakeLength DWORD 5
+snakeDir    BYTE 0
+foodPosX    BYTE 0
+foodPosY    BYTE 0
+snakePosX   BYTE MAX_SNAKE DUP(0)
+snakePosY   BYTE MAX_SNAKE DUP(0)
 
-chHead      BYTE 'O'
-chBody      BYTE 'o'
-chFood      BYTE '@'
-chWall      BYTE '#'
-chEmpty     BYTE ' '
+charHead    BYTE 'O', 0
+charBody    BYTE 'o', 0
+charFood    BYTE '@', 0
+charWall    BYTE '#', 0
+charSpace   BYTE ' ', 0
 
-colorHead   BYTE 0Eh      ; Yellow
-colorBody   BYTE 0Ah      ; Light green
-colorFood   BYTE 0Ch      ; Light red
-colorWall   BYTE 08h      ; Dark gray
-colorEmpty  BYTE 07h      ; Default
+clrHead     BYTE 0Eh
+clrBody     BYTE 0Ah
+clrFood     BYTE 0Ch
+clrWall     BYTE 08h
+clrNormal   BYTE 07h
 
-msgGameOver BYTE "GAME OVER! Score: ", 0
-msgPressKey BYTE " - Press Enter to exit...", 0
-msgScore    BYTE "Score: ", 0
-
-tempX       BYTE 0
-tempY       BYTE 0
+msgStart    BYTE "=== SNAKE GAME ===", 13, 10
+            BYTE "Use Arrow Keys to move", 13, 10
+            BYTE "Press any key to start...", 0
+msgOver     BYTE 13, 10, "GAME OVER! Final Score: ", 0
+msgExit     BYTE 13, 10, "Press Enter to exit...", 0
+msgScoreLbl BYTE "Score: ", 0
 
 .code
 
+;=========================================
+; MAIN PROCEDURE
+;=========================================
 main PROC
     call Randomize
     call ClrScr
-
-    ; Initialize snake in center
-    xor esi, esi
-init_loop:
-    mov eax, 20
-    sub eax, esi
-    mov [snakeX+esi], al
-    mov BYTE PTR [snakeY+esi], 10
-    inc esi
-    cmp esi, 5
-    jl init_loop
-
-    mov dir, 0
-    mov snakeLen, 5
-    mov score, 0
-    call PlaceFood
-
-game_loop:
-    call DrawGame
-    call ReadKey
-    jz no_key
-
-    ; Quit keys
-    cmp al, 27
-    je quit
-    cmp al, 'q'
-    je quit
-    cmp al, 'Q'
-    je quit
-
-    ; Arrow keys
-    cmp ah, 72
-    je key_up
-    cmp ah, 80
-    je key_down
-    cmp ah, 75
-    je key_left
-    cmp ah, 77
-    je key_right
-    jmp no_key
-
-key_up:
-    cmp dir, 1
-    je no_key
-    mov dir, 3
-    jmp no_key
-
-key_down:
-    cmp dir, 3
-    je no_key
-    mov dir, 1
-    jmp no_key
-
-key_left:
-    cmp dir, 0
-    je no_key
-    mov dir, 2
-    jmp no_key
-
-key_right:
-    cmp dir, 2
-    je no_key
-    mov dir, 0
-
-no_key:
-    call MoveSnake
-    mov eax, DELAY_MS
-    call Delay
-    jmp game_loop
-
-quit:
-    call ClrScr
-    invoke ExitProcess,0
-main ENDP
-
-;------------------------------------------
-PlaceFood PROC
-    pushad
-pick_food:
-    mov eax, WIDTH_BYTE
-    call RandomRange
-    inc al
-    mov [foodX], al
-
-    mov eax, HEIGHT_BYTE
-    call RandomRange
-    inc al
-    mov [foodY], al
-
-    ; Check for collision with snake
-    mov ecx, snakeLen
-    xor ebx, ebx
-
-check_collision:
-    cmp ebx, ecx
-    jae food_ok
-
-    mov al, [snakeX+ebx]
-    cmp al, [foodX]
-    jne next_segment
-    mov al, [snakeY+ebx]
-    cmp al, [foodY]
-    jne next_segment
-
-    ; Collision, retry
-    jmp pick_food
-
-next_segment:
-    inc ebx
-    jmp check_collision
-
-food_ok:
-    popad
-    ret
-PlaceFood ENDP
-
-;------------------------------------------
-DrawGame PROC
-    pushad
-
-    call ClrScr
-
-    ; Top wall
-    mov ecx, WIDTH_BYTE+2
-    mov al, colorWall
-    call SetTextColor
-    mov edx, OFFSET chWall
-draw_top:
-    call WriteString
-    loop draw_top
-    call Crlf
-
-    ; Draw rows
-    mov bl, 1
-draw_rows:
-    cmp bl, HEIGHT_BYTE+1
-    jg draw_bottom_wall
-
-    ; Left wall
-    mov al, colorWall
-    call SetTextColor
-    mov edx, OFFSET chWall
-    call WriteString
-
-    ; Draw cells
-    mov bh, 1
-draw_cols:
-    cmp bh, WIDTH_BYTE+1
-    jg draw_right_wall
-
-    mov tempX, bh
-    mov tempY, bl
-
-    ; Check snake head
-    mov al, [snakeX]
-    cmp al, tempX
-    jne check_body
-    mov al, [snakeY]
-    cmp al, tempY
-    jne check_body
-    mov al, colorHead
-    call SetTextColor
-    mov edx, OFFSET chHead
-    call WriteString
-    jmp next_cell
-
-check_body:
-    mov ecx, snakeLen
-    xor esi, esi
-    inc esi
-check_body_loop:
-    cmp esi, ecx
-    jae check_food
-    mov al, [snakeX+esi]
-    cmp al, tempX
-    jne next_body_segment
-    mov al, [snakeY+esi]
-    cmp al, tempY
-    jne next_body_segment
-    mov al, colorBody
-    call SetTextColor
-    mov edx, OFFSET chBody
-    call WriteString
-    jmp next_cell
-next_body_segment:
-    inc esi
-    jmp check_body_loop
-
-check_food:
-    mov al, [foodX]
-    cmp al, tempX
-    jne draw_empty
-    mov al, [foodY]
-    cmp al, tempY
-    jne draw_empty
-    mov al, colorFood
-    call SetTextColor
-    mov edx, OFFSET chFood
-    call WriteString
-    jmp next_cell
-
-draw_empty:
-    mov al, colorEmpty
-    call SetTextColor
-    mov edx, OFFSET chEmpty
-    call WriteString
-
-next_cell:
-    inc bh
-    jmp draw_cols
-
-draw_right_wall:
-    mov al, colorWall
-    call SetTextColor
-    mov edx, OFFSET chWall
-    call WriteString
-    call Crlf
-    inc bl
-    jmp draw_rows
-
-draw_bottom_wall:
-    mov ecx, WIDTH_BYTE+2
-    mov al, colorWall
-    call SetTextColor
-    mov edx, OFFSET chWall
-draw_bottom:
-    call WriteString
-    loop draw_bottom
-    call Crlf
-
-    ; Display score
-    mov al, 07h
-    call SetTextColor
-    mov edx, OFFSET msgScore
-    call WriteString
-    mov eax, score
-    call WriteDec
-    call Crlf
-
-    popad
-    ret
-DrawGame ENDP
-
-;------------------------------------------
-MoveSnake PROC
-    pushad
-
-    mov al, [snakeX]
-    mov bl, [snakeY]
-
-    cmp dir, 0
-    je move_right
-    cmp dir, 1
-    je move_down
-    cmp dir, 2
-    je move_left
-    cmp dir, 3
-    je move_up
-
-move_right: inc al
-    jmp position_ready
-move_down:  inc bl
-    jmp position_ready
-move_left:  dec al
-    jmp position_ready
-move_up:    dec bl
-
-position_ready:
-    ; Wall collision
-    cmp al, 1
-    jl game_over
-    cmp al, WIDTH_BYTE
-    jg game_over
-    cmp bl, 1
-    jl game_over
-    cmp bl, HEIGHT_BYTE
-    jg game_over
-
-    mov tempX, al
-    mov tempY, bl
-
-    ; Self collision
-    mov ecx, snakeLen
-    mov esi, 1
-self_collision:
-    cmp esi, ecx
-    jae check_food
-    mov dl, [snakeX+esi]
-    cmp dl, tempX
-    jne next_self
-    mov dh, [snakeY+esi]
-    cmp dh, tempY
-    jne next_self
-    jmp game_over
-next_self:
-    inc esi
-    jmp self_collision
-
-check_food:
-    mov dl, [foodX]
-    cmp dl, tempX
-    jne normal_move
-    mov dl, [foodY]
-    cmp dl, tempY
-    jne normal_move
-
-    ; Eating food
-    mov eax, snakeLen
-    inc eax
-    cmp eax, MAXLEN
-    jg cap_length
-    mov snakeLen, eax
-    inc score
-    call PlaceFood
-    jmp insert_head
-cap_length:
-    mov snakeLen, MAXLEN
-    inc score
-    call PlaceFood
-    jmp insert_head
-
-normal_move:
-    ; Shift body
-    mov eax, snakeLen
-    dec eax
-    mov esi, eax
-shift_loop:
-    cmp esi, 0
-    jle insert_head
-    push esi
-    dec esi
-    mov dl, [snakeX+esi]
-    pop esi
-    mov [snakeX+esi], dl
-    push esi
-    dec esi
-    mov dl, [snakeY+esi]
-    pop esi
-    mov [snakeY+esi], dl
-    dec esi
-    jmp shift_loop
-
-insert_head:
-    mov al, tempX
-    mov [snakeX], al
-    mov al, tempY
-    mov [snakeY], al
-    popad
-    ret
-
-game_over:
-    call ClrScr
-    mov dh, 10
+    
+    ; Show start screen
+    mov dh, 8
     mov dl, 20
     call Gotoxy
-    mov al, 0Ch
+    mov al, clrHead
     call SetTextColor
-    mov edx, OFFSET msgGameOver
+    mov edx, OFFSET msgStart
     call WriteString
-    mov eax, score
-    call WriteDec
-    mov edx, OFFSET msgPressKey
-    call WriteString
+    call ReadChar
+    
+    ; Initialize game
+    call ClrScr
+    call InitializeSnake
+    call SpawnFood
+    
+    ; Main game loop
+MainGameLoop:
+    call RenderFrame
+    call ProcessInput
+    call UpdateSnake
+    
+    mov eax, GAME_DELAY
+    call Delay
+    jmp MainGameLoop
+    
+MainExit:
+    call ClrScr
+    invoke ExitProcess, 0
+main ENDP
 
-wait_loop:
+;=========================================
+; INITIALIZE SNAKE
+;=========================================
+InitializeSnake PROC
+    push eax
+    push ecx
+    push esi
+    
+    ; Reset game state
+    mov gameScore, 0
+    mov snakeLength, 5
+    mov snakeDir, DIR_RIGHT
+    
+    ; Place snake horizontally in center
+    mov ecx, 5
+    mov esi, 0
+    
+InitSnakeLoop:
+    mov eax, 20
+    sub eax, esi
+    mov [snakePosX + esi], al
+    mov BYTE PTR [snakePosY + esi], 10
+    inc esi
+    loop InitSnakeLoop
+    
+    pop esi
+    pop ecx
+    pop eax
+    ret
+InitializeSnake ENDP
+
+;=========================================
+; SPAWN FOOD AT RANDOM LOCATION
+;=========================================
+SpawnFood PROC
+    push eax
+    push ebx
+    push ecx
+    
+TryNewFood:
+    ; Generate random position
+    mov eax, GRID_WIDTH
+    call RandomRange
+    inc al
+    mov foodPosX, al
+    
+    mov eax, GRID_HEIGHT
+    call RandomRange
+    inc al
+    mov foodPosY, al
+    
+    ; Check if food overlaps snake
+    mov ecx, snakeLength
+    xor ebx, ebx
+    
+CheckFoodCollision:
+    cmp ebx, ecx
+    jae FoodIsValid
+    
+    mov al, [snakePosX + ebx]
+    cmp al, foodPosX
+    jne NextFoodCheck
+    
+    mov al, [snakePosY + ebx]
+    cmp al, foodPosY
+    jne NextFoodCheck
+    
+    ; Food on snake, try again
+    jmp TryNewFood
+    
+NextFoodCheck:
+    inc ebx
+    jmp CheckFoodCollision
+    
+FoodIsValid:
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+SpawnFood ENDP
+
+;=========================================
+; RENDER GAME FRAME
+;=========================================
+RenderFrame PROC
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    
+    ; Move cursor to top
+    mov dh, 0
+    mov dl, 0
+    call Gotoxy
+    
+    ; Draw top wall
+    mov al, clrWall
+    call SetTextColor
+    mov ecx, GRID_WIDTH
+    add ecx, 2
+DrawTopWall:
+    mov edx, OFFSET charWall
+    call WriteString
+    loop DrawTopWall
+    call Crlf
+    
+    ; Draw game area row by row
+    mov bl, 1
+    
+DrawRowsLoop:
+    movzx eax, bl
+    cmp eax, GRID_HEIGHT
+    jg DrawBottomWall
+    
+    ; Left wall
+    mov al, clrWall
+    call SetTextColor
+    mov edx, OFFSET charWall
+    call WriteString
+    
+    ; Draw columns
+    mov bh, 1
+    
+DrawColumnsLoop:
+    movzx eax, bh
+    cmp eax, GRID_WIDTH
+    jg EndOfRow
+    
+    ; Check what to draw at this position
+    call CheckPosition
+    
+    inc bh
+    jmp DrawColumnsLoop
+    
+EndOfRow:
+    ; Right wall
+    mov al, clrWall
+    call SetTextColor
+    mov edx, OFFSET charWall
+    call WriteString
+    call Crlf
+    
+    inc bl
+    jmp DrawRowsLoop
+    
+DrawBottomWall:
+    mov al, clrWall
+    call SetTextColor
+    mov ecx, GRID_WIDTH
+    add ecx, 2
+DrawBottomLoop:
+    mov edx, OFFSET charWall
+    call WriteString
+    loop DrawBottomLoop
+    call Crlf
+    
+    ; Display score
+    mov al, clrNormal
+    call SetTextColor
+    mov edx, OFFSET msgScoreLbl
+    call WriteString
+    mov eax, gameScore
+    call WriteDec
+    call Crlf
+    
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+RenderFrame ENDP
+
+;=========================================
+; CHECK WHAT TO DRAW AT POSITION (BH, BL)
+;=========================================
+CheckPosition PROC
+    push eax
+    push ecx
+    push esi
+    
+    ; Check if it's the snake head
+    mov al, [snakePosX]
+    cmp al, bh
+    jne CheckSnakeBody
+    mov al, [snakePosY]
+    cmp al, bl
+    jne CheckSnakeBody
+    
+    ; Draw head
+    mov al, clrHead
+    call SetTextColor
+    mov edx, OFFSET charHead
+    call WriteString
+    jmp CheckPositionDone
+    
+CheckSnakeBody:
+    ; Check if it's snake body
+    mov ecx, snakeLength
+    mov esi, 1
+    
+CheckBodyLoop:
+    cmp esi, ecx
+    jae CheckFoodPos
+    
+    mov al, [snakePosX + esi]
+    cmp al, bh
+    jne NextBodySegment
+    mov al, [snakePosY + esi]
+    cmp al, bl
+    jne NextBodySegment
+    
+    ; Draw body
+    mov al, clrBody
+    call SetTextColor
+    mov edx, OFFSET charBody
+    call WriteString
+    jmp CheckPositionDone
+    
+NextBodySegment:
+    inc esi
+    jmp CheckBodyLoop
+    
+CheckFoodPos:
+    ; Check if it's food
+    mov al, foodPosX
+    cmp al, bh
+    jne DrawEmpty
+    mov al, foodPosY
+    cmp al, bl
+    jne DrawEmpty
+    
+    ; Draw food
+    mov al, clrFood
+    call SetTextColor
+    mov edx, OFFSET charFood
+    call WriteString
+    jmp CheckPositionDone
+    
+DrawEmpty:
+    ; Draw empty space
+    mov al, clrNormal
+    call SetTextColor
+    mov edx, OFFSET charSpace
+    call WriteString
+    
+CheckPositionDone:
+    pop esi
+    pop ecx
+    pop eax
+    ret
+CheckPosition ENDP
+
+;=========================================
+; PROCESS KEYBOARD INPUT
+;=========================================
+ProcessInput PROC
+    push eax
+    
+    call ReadKey
+    jz NoKeyPressed
+    
+    ; Check for quit keys
+    cmp al, 27
+    je ExitGame
+    cmp al, 'q'
+    je ExitGame
+    cmp al, 'Q'
+    je ExitGame
+    
+    ; Check arrow keys
+    cmp ah, 72
+    je PressUp
+    cmp ah, 80
+    je PressDown
+    cmp ah, 75
+    je PressLeft
+    cmp ah, 77
+    je PressRight
+    jmp NoKeyPressed
+    
+PressUp:
+    cmp snakeDir, DIR_DOWN
+    je NoKeyPressed
+    mov snakeDir, DIR_UP
+    jmp NoKeyPressed
+    
+PressDown:
+    cmp snakeDir, DIR_UP
+    je NoKeyPressed
+    mov snakeDir, DIR_DOWN
+    jmp NoKeyPressed
+    
+PressLeft:
+    cmp snakeDir, DIR_RIGHT
+    je NoKeyPressed
+    mov snakeDir, DIR_LEFT
+    jmp NoKeyPressed
+    
+PressRight:
+    cmp snakeDir, DIR_LEFT
+    je NoKeyPressed
+    mov snakeDir, DIR_RIGHT
+    jmp NoKeyPressed
+    
+ExitGame:
+    call ClrScr
+    invoke ExitProcess, 0
+    
+NoKeyPressed:
+    pop eax
+    ret
+ProcessInput ENDP
+
+;=========================================
+; UPDATE SNAKE POSITION
+;=========================================
+UpdateSnake PROC
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    
+    ; Calculate new head position
+    movzx eax, BYTE PTR [snakePosX]
+    movzx ebx, BYTE PTR [snakePosY]
+    
+    cmp snakeDir, DIR_RIGHT
+    je MoveRight
+    cmp snakeDir, DIR_DOWN
+    je MoveDown
+    cmp snakeDir, DIR_LEFT
+    je MoveLeft
+    cmp snakeDir, DIR_UP
+    je MoveUp
+    
+MoveRight:
+    inc al
+    jmp CheckCollisions
+MoveDown:
+    inc bl
+    jmp CheckCollisions
+MoveLeft:
+    dec al
+    jmp CheckCollisions
+MoveUp:
+    dec bl
+    
+CheckCollisions:
+    ; Check wall collision
+    cmp al, 1
+    jl GameOver
+    cmp al, GRID_WIDTH
+    jg GameOver
+    cmp bl, 1
+    jl GameOver
+    cmp bl, GRID_HEIGHT
+    jg GameOver
+    
+    ; Check self collision
+    mov ecx, snakeLength
+    cmp ecx, 1
+    jle CheckFoodCollision
+    
+    mov esi, 1
+CheckSelfLoop:
+    cmp esi, ecx
+    jae CheckFoodCollision
+    
+    movzx edx, BYTE PTR [snakePosX + esi]
+    cmp dl, al
+    jne NextSelfCheck
+    
+    movzx edx, BYTE PTR [snakePosY + esi]
+    cmp dl, bl
+    jne NextSelfCheck
+    
+    jmp GameOver
+    
+NextSelfCheck:
+    inc esi
+    jmp CheckSelfLoop
+    
+CheckFoodCollision:
+    ; Check if food eaten
+    movzx edx, BYTE PTR foodPosX
+    cmp dl, al
+    jne MoveNormally
+    
+    movzx edx, BYTE PTR foodPosY
+    cmp dl, bl
+    jne MoveNormally
+    
+    ; Food eaten - grow snake
+    mov ecx, snakeLength
+    inc ecx
+    cmp ecx, MAX_SNAKE
+    jg CapLength
+    mov snakeLength, ecx
+    inc gameScore
+    call SpawnFood
+    jmp InsertHead
+    
+CapLength:
+    mov snakeLength, MAX_SNAKE
+    inc gameScore
+    call SpawnFood
+    jmp InsertHead
+    
+MoveNormally:
+    ; Shift body segments
+    mov ecx, snakeLength
+    cmp ecx, 1
+    jle InsertHead
+    
+    mov esi, ecx
+    dec esi
+    
+ShiftLoop:
+    cmp esi, 0
+    jle InsertHead
+    
+    mov edi, esi
+    dec edi
+    
+    movzx edx, BYTE PTR [snakePosX + edi]
+    mov [snakePosX + esi], dl
+    
+    movzx edx, BYTE PTR [snakePosY + edi]
+    mov [snakePosY + esi], dl
+    
+    dec esi
+    jmp ShiftLoop
+    
+InsertHead:
+    mov [snakePosX], al
+    mov [snakePosY], bl
+    
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+    
+GameOver:
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    
+    call Crlf
+    call Crlf
+    mov al, clrFood
+    call SetTextColor
+    mov edx, OFFSET msgOver
+    call WriteString
+    mov eax, gameScore
+    call WriteDec
+    
+    mov al, clrNormal
+    call SetTextColor
+    mov edx, OFFSET msgExit
+    call WriteString
+    
+WaitForExit:
     call ReadChar
     cmp al, 13
-    jne wait_loop
+    jne WaitForExit
+    
+    call ClrScr
     invoke ExitProcess, 0
-MoveSnake ENDP
+UpdateSnake ENDP
 
 END main
