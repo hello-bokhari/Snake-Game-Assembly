@@ -48,9 +48,8 @@ main PROC
     ; Initialize snake in center
     xor esi, esi
 init_loop:
-    mov al, 20
-    mov cl, BYTE PTR esi
-    sub al, cl
+    mov eax, 20
+    sub eax, esi
     mov [snakeX+esi], al
     mov BYTE PTR [snakeY+esi], 10
     inc esi
@@ -328,7 +327,7 @@ position_ready:
 
     ; Self collision
     mov ecx, snakeLen
-    xor esi, esi
+    mov esi, 1
 self_collision:
     cmp esi, ecx
     jae check_food
@@ -374,9 +373,15 @@ normal_move:
 shift_loop:
     cmp esi, 0
     jle insert_head
-    mov dl, [snakeX+esi-1]
+    push esi
+    dec esi
+    mov dl, [snakeX+esi]
+    pop esi
     mov [snakeX+esi], dl
-    mov dl, [snakeY+esi-1]
+    push esi
+    dec esi
+    mov dl, [snakeY+esi]
+    pop esi
     mov [snakeY+esi], dl
     dec esi
     jmp shift_loop
