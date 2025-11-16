@@ -15,12 +15,14 @@ DIR_RIGHT   EQU 0
 DIR_DOWN    EQU 1
 DIR_LEFT    EQU 2
 DIR_UP      EQU 3
+DIR_NONE    EQU 255
 
 ;--------------- Data --------------------
 .data
 gameScore   DWORD 0
 snakeLength DWORD 5
 snakeDir    BYTE 0
+nextDir     BYTE DIR_NONE        ; Buffered next direction
 foodPosX    BYTE 0
 foodPosY    BYTE 0
 snakePosX   BYTE MAX_SNAKE DUP(0)
@@ -32,11 +34,11 @@ charFood    BYTE '@', 0
 charWall    BYTE '#', 0
 charSpace   BYTE ' ', 0
 
-clrHead     BYTE 0Eh
-clrBody     BYTE 0Ah
-clrFood     BYTE 0Ch
-clrWall     BYTE 08h
-clrNormal   BYTE 07h
+clrHead     BYTE 0Ch        ; Bright red head
+clrBody     BYTE 04h        ; Dark red body
+clrFood     BYTE 0Eh        ; Yellow food
+clrWall     BYTE 08h        ; Dark gray wall
+clrNormal   BYTE 07h        ; Light gray for normal text
 
 msgStart    BYTE "=== SNAKE GAME ===", 13, 10
             BYTE "Use Arrow Keys to move", 13, 10
@@ -44,6 +46,7 @@ msgStart    BYTE "=== SNAKE GAME ===", 13, 10
 msgOver     BYTE 13, 10, "GAME OVER! Final Score: ", 0
 msgExit     BYTE 13, 10, "Press Enter to exit...", 0
 msgScoreLbl BYTE "Score: ", 0
+msgAuthor   BYTE "Created by: Abbad Hassan & M. Ahmed", 0
 
 .code
 
@@ -96,6 +99,7 @@ InitializeSnake PROC
     mov gameScore, 0
     mov snakeLength, 5
     mov snakeDir, DIR_RIGHT
+    mov nextDir, DIR_NONE
     
     ; Place snake horizontally in center
     mov ecx, 5
@@ -250,6 +254,13 @@ DrawBottomLoop:
     call WriteDec
     call Crlf
     
+    ; Display watermark
+    mov al, 08h              
+    call SetTextColor
+    mov edx, OFFSET msgAuthor
+    call WriteString
+    call Crlf
+    
     pop esi
     pop edx
     pop ecx
@@ -339,7 +350,7 @@ CheckPositionDone:
 CheckPosition ENDP
 
 ;=========================================
-; PROCESS KEYBOARD INPUT
+; PROCESS KEYBOARD INPUT (WITH BUFFERING)
 ;=========================================
 ProcessInput PROC
     push eax
@@ -355,7 +366,7 @@ ProcessInput PROC
     cmp al, 'Q'
     je ExitGame
     
-    ; Check arrow keys
+    ; Check arrow keys and buffer the input
     cmp ah, 72
     je PressUp
     cmp ah, 80
@@ -367,27 +378,57 @@ ProcessInput PROC
     jmp NoKeyPressed
     
 PressUp:
+    ; Check against CURRENT direction if no buffered input
+    cmp nextDir, DIR_NONE
+    jne CheckBufferUp
     cmp snakeDir, DIR_DOWN
     je NoKeyPressed
-    mov snakeDir, DIR_UP
+    mov nextDir, DIR_UP
+    jmp NoKeyPressed
+CheckBufferUp:
+    ; Check against buffered direction
+    cmp nextDir, DIR_DOWN
+    je NoKeyPressed
+    mov nextDir, DIR_UP
     jmp NoKeyPressed
     
 PressDown:
+    cmp nextDir, DIR_NONE
+    jne CheckBufferDown
     cmp snakeDir, DIR_UP
     je NoKeyPressed
-    mov snakeDir, DIR_DOWN
+    mov nextDir, DIR_DOWN
+    jmp NoKeyPressed
+CheckBufferDown:
+    cmp nextDir, DIR_UP
+    je NoKeyPressed
+    mov nextDir, DIR_DOWN
     jmp NoKeyPressed
     
 PressLeft:
+    cmp nextDir, DIR_NONE
+    jne CheckBufferLeft
     cmp snakeDir, DIR_RIGHT
     je NoKeyPressed
-    mov snakeDir, DIR_LEFT
+    mov nextDir, DIR_LEFT
+    jmp NoKeyPressed
+CheckBufferLeft:
+    cmp nextDir, DIR_RIGHT
+    je NoKeyPressed
+    mov nextDir, DIR_LEFT
     jmp NoKeyPressed
     
 PressRight:
+    cmp nextDir, DIR_NONE
+    jne CheckBufferRight
     cmp snakeDir, DIR_LEFT
     je NoKeyPressed
-    mov snakeDir, DIR_RIGHT
+    mov nextDir, DIR_RIGHT
+    jmp NoKeyPressed
+CheckBufferRight:
+    cmp nextDir, DIR_LEFT
+    je NoKeyPressed
+    mov nextDir, DIR_RIGHT
     jmp NoKeyPressed
     
 ExitGame:
@@ -410,6 +451,14 @@ UpdateSnake PROC
     push esi
     push edi
     
+    ; Apply buffered direction if available
+    cmp nextDir, DIR_NONE
+    je UseCurrentDir
+    mov al, nextDir
+    mov snakeDir, al
+    mov nextDir, DIR_NONE
+    
+UseCurrentDir:
     ; Calculate new head position
     movzx eax, BYTE PTR [snakePosX]
     movzx ebx, BYTE PTR [snakePosY]
@@ -565,3 +614,5 @@ WaitForExit:
 UpdateSnake ENDP
 
 END main
+
+
